@@ -1,0 +1,14 @@
+# Python venv
+venv/
+face_venv/
+
+# Bytecode
+__pycache__/
+*.pyc
+
+# Big data/models
+*.pt
+*.pth
+*.h5
+*.onnx
+*.env
