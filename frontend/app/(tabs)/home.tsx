@@ -6,26 +6,79 @@ import {
     ScrollView,
     RefreshControl,
     StatusBar,
-    Dimensions
+    Dimensions,
+    TouchableOpacity,
+    Alert,
 } from "react-native";
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from "@expo/vector-icons";
 import TimerWidget from "../../components/TimerWidget";
-import AttendanceTypeSwitch from "../../components/AttendanceTypeSwitch";
 import Button from "../../components/Button";
 import { useRouter } from "expo-router";
 import { Colors } from "../../constants/Colors";
 import { formatDate, formatTime } from "../../utils/dateUtils";
+import { useAuth } from "../../services/AuthContext";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
+
+// Updated AttendanceTypeSwitch component
+function AttendanceTypeSwitch() {
+    const [activeType, setActiveType] = useState<"individual" | "group">("individual");
+    const router = useRouter();
+
+    const handleSwitch = (type: "individual" | "group") => {
+        setActiveType(type);
+        router.push(`/face-verification/post?type=${type}`);
+    };
+
+    return (
+        <View style={styles.attendanceSwitchContainer}>
+            <TouchableOpacity
+                style={[
+                    styles.switchButton,
+                    activeType === "individual" && styles.switchButtonActive,
+                ]}
+                onPress={() => handleSwitch("individual")}
+            >
+                <Text
+                    style={[
+                        styles.switchButtonText,
+                        activeType === "individual" && styles.switchButtonTextActive,
+                    ]}
+                >
+                    Individual
+                </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                style={[
+                    styles.switchButton,
+                    activeType === "group" && styles.switchButtonActive,
+                ]}
+                onPress={() => handleSwitch("group")}
+            >
+                <Text
+                    style={[
+                        styles.switchButtonText,
+                        activeType === "group" && styles.switchButtonTextActive,
+                    ]}
+                >
+                    Group
+                </Text>
+            </TouchableOpacity>
+        </View>
+    );
+}
 
 export default function Home() {
     const router = useRouter();
+    const { user, logout } = useAuth();
     const [refreshing, setRefreshing] = useState(false);
     const [currentTime, setCurrentTime] = useState(new Date());
     const [isClockIn, setIsClockIn] = useState(true);
-    const [attendanceStatus, setAttendanceStatus] = useState<'not_started' | 'working' | 'break' | 'completed'>('not_started');
+    const [attendanceStatus, setAttendanceStatus] = useState<
+        "not_started" | "working" | "break" | "completed"
+    >("not_started");
 
-    // Update current time every second
     useEffect(() => {
         const timer = setInterval(() => {
             setCurrentTime(new Date());
@@ -36,7 +89,6 @@ export default function Home() {
 
     const onRefresh = React.useCallback(() => {
         setRefreshing(true);
-        // Simulate API call
         setTimeout(() => {
             setRefreshing(false);
         }, 1000);
@@ -50,97 +102,198 @@ export default function Home() {
         }
     };
 
+    const handleLogout = () => {
+        Alert.alert(
+            "Confirm Logout",
+            "Are you sure you want to logout?",
+            [
+                { text: "Cancel", style: "cancel" },
+                { text: "Logout", style: "destructive", onPress: logout }
+            ]
+        );
+    };
+
     const getStatusColor = () => {
         switch (attendanceStatus) {
-            case 'working': return Colors.light.success;
-            case 'break': return Colors.light.warning;
-            case 'completed': return Colors.light.gray400;
-            default: return Colors.light.primary;
+            case "working":
+                return Colors.light.success || "#28a745";
+            case "break":
+                return Colors.light.warning || "#ffc107";
+            case "completed":
+                return Colors.light.gray400 || "#6c757d";
+            default:
+                return Colors.light.primary || "#007bff";
         }
     };
 
     const getStatusText = () => {
         switch (attendanceStatus) {
-            case 'working': return 'Working';
-            case 'break': return 'On Break';
-            case 'completed': return 'Day Complete';
-            default: return 'Not Started';
+            case "working":
+                return "Working";
+            case "break":
+                return "On Break";
+            case "completed":
+                return "Day Complete";
+            default:
+                return "Not Started";
         }
+    };
+
+    const getStatusIcon = () => {
+        switch (attendanceStatus) {
+            case "working":
+                return "checkmark-circle";
+            case "break":
+                return "pause-circle";
+            case "completed":
+                return "checkmark-done-circle";
+            default:
+                return "time-outline";
+        }
+    };
+
+    const formatUsername = (email) => {
+        if (!email) return "User";
+        const username = email.split('@')[0];
+        return username.charAt(0).toUpperCase() + username.slice(1);
+    };
+
+    const getGreeting = () => {
+        const hour = currentTime.getHours();
+        if (hour < 12) return "Good Morning";
+        if (hour < 17) return "Good Afternoon";
+        return "Good Evening";
     };
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor={Colors.light.background} />
+            <StatusBar
+                barStyle="light-content"
+                backgroundColor={Colors.light.primary || "#007bff"}
+            />
 
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                    <RefreshControl 
+                        refreshing={refreshing} 
+                        onRefresh={onRefresh}
+                        tintColor="#fff"
+                        colors={[Colors.light.primary || "#007bff"]}
+                    />
                 }
                 contentContainerStyle={styles.scrollContent}
             >
                 {/* Header Section */}
                 <View style={styles.header}>
-                    <View style={styles.userSection}>
-                        <View>
-                            <Text style={styles.greeting}>Hello, Vedant 👋</Text>
-                            <Text style={styles.dateText}>{formatDate(currentTime, 'long')}</Text>
+                    <View style={styles.headerContent}>
+                        <View style={styles.userSection}>
+                            <View style={styles.userInfo}>
+                                <Text style={styles.greeting}>
+                                    {getGreeting()}, {user?.user_metadata?.full_name || formatUsername(user?.email) || "User"}!
+                                </Text>
+                                <Text style={styles.dateText}>
+                                    {formatDate(currentTime, "long")}
+                                </Text>
+                            </View>
+                            
+                            <TouchableOpacity style={styles.profileButton}>
+                                <View style={styles.profileAvatar}>
+                                    <Text style={styles.profileInitial}>
+                                        {(user?.user_metadata?.full_name || formatUsername(user?.email) || "U").charAt(0)}
+                                    </Text>
+                                </View>
+                            </TouchableOpacity>
                         </View>
-                        <View style={styles.timeContainer}>
-                            <Text style={styles.currentTime}>{formatTime(currentTime)}</Text>
-                        </View>
-                    </View>
 
-                    {/* Status Indicator */}
-                    <View style={[styles.statusCard, { borderLeftColor: getStatusColor() }]}>
-                        <View style={styles.statusContent}>
-                            <Ionicons
-                                name={attendanceStatus === 'working' ? 'checkmark-circle' : 'time-outline'}
-                                size={20}
-                                color={getStatusColor()}
-                            />
-                            <Text style={[styles.statusText, { color: getStatusColor() }]}>
-                                {getStatusText()}
-                            </Text>
+                        <View style={styles.timeSection}>
+                            <Text style={styles.currentTime}>{formatTime(currentTime)}</Text>
+                            <Text style={styles.timeLabel}>Current Time</Text>
                         </View>
-                        {attendanceStatus === 'working' && (
-                            <Text style={styles.workingHours}>8h 24m elapsed</Text>
-                        )}
+
+                        <View style={[styles.statusCard, { backgroundColor: `${getStatusColor()}15` }]}>
+                            <View style={styles.statusContent}>
+                                <View style={[styles.statusIcon, { backgroundColor: getStatusColor() }]}>
+                                    <Ionicons
+                                        name={getStatusIcon()}
+                                        size={18}
+                                        color="#fff"
+                                    />
+                                </View>
+                                <View style={styles.statusTextContainer}>
+                                    <Text style={styles.statusText}>
+                                        {getStatusText()}
+                                    </Text>
+                                    {attendanceStatus === "working" && (
+                                        <Text style={styles.workingHours}>8h 24m elapsed</Text>
+                                    )}
+                                </View>
+                            </View>
+                        </View>
                     </View>
                 </View>
 
-                {/* Timer Widget Card */}
+                {/* Quick Stats */}
+                <View style={styles.quickStatsContainer}>
+                    <View style={styles.quickStatCard}>
+                        <View style={styles.quickStatIcon}>
+                            <Ionicons name="time" size={20} color={Colors.light.primary || "#007bff"} />
+                        </View>
+                        <Text style={styles.quickStatValue}>8.5h</Text>
+                        <Text style={styles.quickStatLabel}>Today</Text>
+                    </View>
+                    
+                    <View style={styles.quickStatCard}>
+                        <View style={styles.quickStatIcon}>
+                            <Ionicons name="calendar" size={20} color="#28a745" />
+                        </View>
+                        <Text style={styles.quickStatValue}>22</Text>
+                        <Text style={styles.quickStatLabel}>This Month</Text>
+                    </View>
+                    
+                    <View style={styles.quickStatCard}>
+                        <View style={styles.quickStatIcon}>
+                            <Ionicons name="trending-up" size={20} color="#ffc107" />
+                        </View>
+                        <Text style={styles.quickStatValue}>95%</Text>
+                        <Text style={styles.quickStatLabel}>Attendance</Text>
+                    </View>
+                </View>
+
+                {/* Timer Widget */}
                 <View style={styles.card}>
                     <View style={styles.cardHeader}>
-                        <Text style={styles.cardTitle}>Today's Activity</Text>
-                        <Ionicons name="time-outline" size={20} color={Colors.light.gray400} />
+                        <View style={styles.cardTitleContainer}>
+                            <Ionicons
+                                name="stopwatch"
+                                size={22}
+                                color={Colors.light.primary || "#007bff"}
+                            />
+                            <Text style={styles.cardTitle}>Today's Activity</Text>
+                        </View>
+                        <TouchableOpacity style={styles.cardAction}>
+                            <Ionicons name="refresh" size={18} color={Colors.light.gray400 || "#6c757d"} />
+                        </TouchableOpacity>
                     </View>
                     <TimerWidget />
                 </View>
 
-                {/* Attendance Type Switch Card */}
+                {/* Attendance Type Switch */}
                 <View style={styles.card}>
                     <View style={styles.cardHeader}>
-                        <Text style={styles.cardTitle}>Attendance Mode</Text>
-                        <Ionicons name="people-outline" size={20} color={Colors.light.gray400} />
+                        <View style={styles.cardTitleContainer}>
+                            <Ionicons
+                                name="people"
+                                size={22}
+                                color={Colors.light.primary || "#007bff"}
+                            />
+                            <Text style={styles.cardTitle}>Attendance Mode</Text>
+                        </View>
+                        <View style={styles.cardBadge}>
+                            <Text style={styles.cardBadgeText}>Active</Text>
+                        </View>
                     </View>
                     <AttendanceTypeSwitch />
-                </View>
-
-                {/* Quick Stats */}
-                <View style={styles.statsContainer}>
-                    <View style={styles.statCard}>
-                        <Text style={styles.statValue}>8.5</Text>
-                        <Text style={styles.statLabel}>Hours Today</Text>
-                    </View>
-                    <View style={styles.statCard}>
-                        <Text style={styles.statValue}>22</Text>
-                        <Text style={styles.statLabel}>Days This Month</Text>
-                    </View>
-                    <View style={styles.statCard}>
-                        <Text style={styles.statValue}>95%</Text>
-                        <Text style={styles.statLabel}>Attendance</Text>
-                    </View>
                 </View>
 
                 {/* Action Buttons */}
@@ -152,9 +305,9 @@ export default function Home() {
                         style={styles.primaryAction}
                         icon={
                             <Ionicons
-                                name={isClockIn ? "log-in-outline" : "log-out-outline"}
-                                size={20}
-                                color={Colors.light.background}
+                                name={isClockIn ? "log-in" : "log-out"}
+                                size={22}
+                                color="#fff"
                                 style={{ marginRight: 8 }}
                             />
                         }
@@ -169,28 +322,54 @@ export default function Home() {
                             style={styles.secondaryButton}
                             icon={
                                 <Ionicons
-                                    name="pause-outline"
+                                    name="pause"
                                     size={18}
-                                    color={Colors.light.primary}
+                                    color={Colors.light.primary || "#007bff"}
                                     style={{ marginRight: 6 }}
                                 />
                             }
                         />
                         <Button
-                            title="View Activity"
-                            onPress={() => router.push("/(tabs)/activity")}
+                            title="Profile"
+                            onPress={() => router.push("/profile")}
                             variant="ghost"
                             size="medium"
                             style={styles.secondaryButton}
                             icon={
                                 <Ionicons
-                                    name="list-outline"
+                                    name="analytics"
                                     size={18}
-                                    color={Colors.light.primary}
+                                    color={Colors.light.primary || "#007bff"}
                                     style={{ marginRight: 6 }}
                                 />
                             }
                         />
+                    </View>
+                </View>
+
+                {/* Quick Actions */}
+                <View style={styles.quickActionsSection}>
+                    <Text style={styles.sectionTitle}>Quick Actions</Text>
+                    <View style={styles.quickActions}>
+                        <TouchableOpacity style={styles.quickActionItem}>
+                            <Ionicons name="calendar-outline" size={24} color={Colors.light.primary || "#007bff"} />
+                            <Text style={styles.quickActionText}>Schedule</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity style={styles.quickActionItem}>
+                            <Ionicons name="document-text-outline" size={24} color="#28a745" />
+                            <Text style={styles.quickActionText}>Reports</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity style={styles.quickActionItem}>
+                            <Ionicons name="settings-outline" size={24} color="#6c757d" />
+                            <Text style={styles.quickActionText}>Settings</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity style={styles.quickActionItem} onPress={handleLogout}>
+                            <Ionicons name="exit-outline" size={24} color="#dc3545" />
+                            <Text style={styles.quickActionText}>Logout</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </ScrollView>
@@ -199,139 +378,63 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: Colors.light.gray100,
-    },
-    scrollContent: {
-        paddingBottom: 20,
-    },
+    container: { flex: 1, backgroundColor: "#f8f9fa" },
+    scrollContent: { paddingBottom: 20 },
     header: {
-        backgroundColor: Colors.light.background,
-        paddingHorizontal: 20,
-        paddingTop: 20,
-        paddingBottom: 16,
-        borderBottomLeftRadius: 24,
-        borderBottomRightRadius: 24,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        elevation: 3,
+        backgroundColor: Colors.light.primary || "#007bff",
+        paddingTop: 10,
+        paddingBottom: 30,
+        borderBottomLeftRadius: 30,
+        borderBottomRightRadius: 30,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 6,
     },
-    userSection: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 16,
-    },
-    greeting: {
-        fontSize: 24,
-        fontWeight: '700',
-        color: Colors.light.text,
-        marginBottom: 4,
-    },
-    dateText: {
-        fontSize: 14,
-        color: Colors.light.gray500,
-        fontWeight: '500',
-    },
-    timeContainer: {
-        alignItems: 'flex-end',
-    },
-    currentTime: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: Colors.light.primary,
-    },
-    statusCard: {
-        backgroundColor: Colors.light.gray100,
-        borderRadius: 12,
-        padding: 12,
-        borderLeftWidth: 4,
-    },
-    statusContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    statusText: {
-        marginLeft: 8,
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    workingHours: {
-        fontSize: 12,
-        color: Colors.light.gray500,
-        marginTop: 4,
-        marginLeft: 28,
-    },
-    card: {
-        backgroundColor: Colors.light.background,
-        marginHorizontal: 20,
-        marginTop: 16,
-        borderRadius: 16,
-        padding: 16,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 2,
-    },
-    cardHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    cardTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: Colors.light.text,
-    },
-    statsContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginHorizontal: 20,
-        marginTop: 16,
-    },
-    statCard: {
-        backgroundColor: Colors.light.background,
-        flex: 1,
-        marginHorizontal: 4,
-        padding: 16,
-        borderRadius: 12,
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 1,
-    },
-    statValue: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: Colors.light.primary,
-        marginBottom: 4,
-    },
-    statLabel: {
-        fontSize: 12,
-        color: Colors.light.gray500,
-        textAlign: 'center',
-        fontWeight: '500',
-    },
-    actionSection: {
-        marginHorizontal: 20,
-        marginTop: 24,
-    },
-    primaryAction: {
-        marginBottom: 12,
-    },
-    secondaryActions: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-    },
-    secondaryButton: {
-        flex: 1,
-        marginHorizontal: 4,
-    },
+    headerContent: { paddingHorizontal: 20, paddingTop: 10 },
+    userSection: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 },
+    userInfo: { flex: 1 },
+    greeting: { fontSize: 24, fontWeight: "700", color: "#fff", marginBottom: 6 },
+    dateText: { fontSize: 15, color: "rgba(255,255,255,0.8)", fontWeight: "500" },
+    profileButton: { marginLeft: 15 },
+    profileAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: "rgba(255,255,255,0.3)" },
+    profileInitial: { fontSize: 20, fontWeight: "600", color: "#fff" },
+    timeSection: { alignItems: "center", marginBottom: 20 },
+    currentTime: { fontSize: 36, fontWeight: "800", color: "#fff", marginBottom: 4 },
+    timeLabel: { fontSize: 13, color: "rgba(255,255,255,0.7)", fontWeight: "500" },
+    statusCard: { borderRadius: 16, padding: 16, marginTop: 8 },
+    statusContent: { flexDirection: "row", alignItems: "center" },
+    statusIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center", marginRight: 12 },
+    statusTextContainer: { flex: 1 },
+    statusText: { fontSize: 16, fontWeight: "600", color: "#fff", marginBottom: 2 },
+    workingHours: { fontSize: 13, color: "rgba(255,255,255,0.7)", fontWeight: "500" },
+    quickStatsContainer: { flexDirection: "row", paddingHorizontal: 20, marginTop: -15, marginBottom: 5, gap: 12 },
+    quickStatCard: { flex: 1, backgroundColor: "#fff", borderRadius: 16, padding: 16, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 3 },
+    quickStatIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#f8f9fa", justifyContent: "center", alignItems: "center", marginBottom: 8 },
+    quickStatValue: { fontSize: 18, fontWeight: "700", color: "#333", marginBottom: 4 },
+    quickStatLabel: { fontSize: 12, color: "#666", fontWeight: "500" },
+    card: { backgroundColor: "#fff", marginHorizontal: 20, marginTop: 16, borderRadius: 20, padding: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
+    cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+    cardTitleContainer: { flexDirection: "row", alignItems: "center" },
+    cardTitle: { fontSize: 17, fontWeight: "600", color: "#333", marginLeft: 8 },
+    cardAction: { padding: 4 },
+    cardBadge: { backgroundColor: "#e8f5e8", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+    cardBadgeText: { fontSize: 12, color: "#28a745", fontWeight: "500" },
+    actionSection: { paddingHorizontal: 20, marginTop: 20 },
+    primaryAction: { marginBottom: 12, borderRadius: 16, paddingVertical: 16 },
+    secondaryActions: { flexDirection: "row", gap: 12 },
+    secondaryButton: { flex: 1, borderRadius: 12 },
+    quickActionsSection: { paddingHorizontal: 20, marginTop: 24 },
+    sectionTitle: { fontSize: 18, fontWeight: "600", color: "#333", marginBottom: 16 },
+    quickActions: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+    quickActionItem: { backgroundColor: "#fff", width: (width - 56) / 2, padding: 20, borderRadius: 16, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+    quickActionText: { fontSize: 14, fontWeight: "500", color: "#333", marginTop: 8 },
+
+    // Attendance Switch Styles
+    attendanceSwitchContainer: { flexDirection: "row", justifyContent: "space-around", marginVertical: 10 },
+    switchButton: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.light.primary || "#007bff", backgroundColor: "#fff", marginHorizontal: 5, alignItems: "center" },
+    switchButtonActive: { backgroundColor: Colors.light.primary || "#007bff" },
+    switchButtonText: { fontSize: 16, fontWeight: "500", color: Colors.light.primary || "#007bff" },
+    switchButtonTextActive: { color: "#fff" },
 });

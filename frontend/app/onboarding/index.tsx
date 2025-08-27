@@ -26,3 +26,4 @@ const styles = StyleSheet.create({
     title: { fontSize: 26, fontWeight: "700", marginBottom: 8 },
     subtitle: { fontSize: 14, color: "#666" },
 });
+

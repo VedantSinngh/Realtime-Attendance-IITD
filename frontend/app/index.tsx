@@ -1,25 +1,30 @@
-import React, { useEffect } from "react";
-import { View, Image, StyleSheet } from "react-native";
-import { useRouter } from "expo-router";
+import React from 'react';
+import { View, Text, Button, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
 
-export default function Splash() {
+export default function HomeScreen() {
     const router = useRouter();
-
-    useEffect(() => {
-        const t = setTimeout(() => {
-            router.replace("/onboarding/signin");
-        }, 1200);
-        return () => clearTimeout(t);
-    }, []);
 
     return (
         <View style={styles.container}>
-            <Image source={require("../assets/images/logo.png")} style={styles.logo} />
+            <Text style={styles.title}>Welcome to the App</Text>
+            <Button
+                title="Go to Sign In"
+                onPress={() => router.push('/onboarding/signin')}
+            />
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff" },
-    logo: { width: 160, height: 160, resizeMode: "contain" },
+    container: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    title: {
+        fontSize: 24,
+        marginBottom: 20,
+    },
 });

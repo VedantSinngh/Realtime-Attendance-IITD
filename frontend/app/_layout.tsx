@@ -1,28 +1,27 @@
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import React from "react";
-
+import { AuthProvider } from "../services/AuthContext";
+import { LeaveProvider } from "../app/profile/leave-context"; 
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <Stack>
-        {/* Auth / onboarding flow */}
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="onboarding/index" options={{ title: "Welcome" }} />
-        <Stack.Screen name="onboarding/signin" options={{ title: "Sign In" }} />
-        <Stack.Screen name="onboarding/otp-verify" options={{ title: "Verify OTP" }} />
+      <AuthProvider>
+        <LeaveProvider> {/* Wrap entire app */}
+          <Stack>
+            {/* Public routes (no auth) */}
+            <Stack.Screen name="onboarding/index" options={{ headerShown: false }} />
+            <Stack.Screen name="onboarding/signin" options={{ headerShown: false }} />
 
-        {/* Face verification */}
-        <Stack.Screen name="face-verification/pre" options={{ title: "Setup Face ID" }} />
-        <Stack.Screen name="face-verification/process" options={{ title: "Scan Face" }} />
-        <Stack.Screen name="face-verification/post" options={{ title: "Done" }} />
-
-        {/* Main app (tabs) */}
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        {/* Clock flows */}
-        <Stack.Screen name="clock/clock-in" options={{ title: "Clock In" }} />
-        <Stack.Screen name="clock/clock-in-confirm" options={{ title: "Confirm" }} />
-      </Stack>
+            {/* Protected section */}
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="clock" options={{ headerShown: false }} />
+            <Stack.Screen name="face-verification" options={{ headerShown: false }} />
+            <Stack.Screen name="profile" options={{ headerShown: false }} />
+          </Stack>
+        </LeaveProvider>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
