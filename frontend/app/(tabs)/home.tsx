@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
     View,
     Text,
@@ -17,8 +17,37 @@ import { useRouter } from "expo-router";
 import { Colors } from "../../constants/Colors";
 import { formatDate, formatTime } from "../../utils/dateUtils";
 import { useAuth } from "../../services/AuthContext";
+import { supabase, getUserLeaves } from "../../services/supabase";
 
 const { width } = Dimensions.get("window");
+
+// Types for real-time data
+interface LeaveRequest {
+    id: string;
+    leave_type: string;
+    start_date: string;
+    end_date: string;
+    status: 'Pending' | 'Approved' | 'Rejected';
+    reason: string;
+    created_at: string;
+}
+
+interface AttendanceRecord {
+    id: string;
+    clock_in: string;
+    clock_out: string | null;
+    date: string;
+    total_hours: number | null;
+    status: 'working' | 'completed' | 'break';
+}
+
+interface DashboardStats {
+    todayHours: number;
+    monthlyAttendance: number;
+    attendancePercentage: number;
+    pendingLeaves: number;
+    rejectedLeaves: number;
+}
 
 // Updated AttendanceTypeSwitch component
 function AttendanceTypeSwitch() {
@@ -71,14 +100,27 @@ function AttendanceTypeSwitch() {
 
 export default function Home() {
     const router = useRouter();
-    const { user, logout } = useAuth();
+    const { user, signOut } = useAuth();
     const [refreshing, setRefreshing] = useState(false);
     const [currentTime, setCurrentTime] = useState(new Date());
     const [isClockIn, setIsClockIn] = useState(true);
     const [attendanceStatus, setAttendanceStatus] = useState<
         "not_started" | "working" | "break" | "completed"
     >("not_started");
+    
+    // Real-time data states
+    const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
+        todayHours: 0,
+        monthlyAttendance: 0,
+        attendancePercentage: 0,
+        pendingLeaves: 0,
+        rejectedLeaves: 0,
+    });
+    const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+    const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null);
+    const [loading, setLoading] = useState(true);
 
+    // Time update effect
     useEffect(() => {
         const timer = setInterval(() => {
             setCurrentTime(new Date());
@@ -87,12 +129,176 @@ export default function Home() {
         return () => clearInterval(timer);
     }, []);
 
-    const onRefresh = React.useCallback(() => {
+    // Fetch today's attendance record
+    const fetchTodayAttendance = useCallback(async () => {
+        if (!user) return;
+
+        try {
+            const today = new Date().toISOString().split('T')[0];
+            const { data, error } = await supabase
+                .from('attendance')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('date', today)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .single();
+
+            if (error && error.code !== 'PGRST116') {
+                console.error('Error fetching attendance:', error);
+                return;
+            }
+
+            if (data) {
+                setTodayAttendance(data);
+                setAttendanceStatus(data.status || 'not_started');
+                setIsClockIn(!data.clock_in || !!data.clock_out);
+            } else {
+                setTodayAttendance(null);
+                setAttendanceStatus('not_started');
+                setIsClockIn(true);
+            }
+        } catch (error) {
+            console.error('Error fetching today attendance:', error);
+        }
+    }, [user]);
+
+    // Fetch leave requests
+    const fetchLeaveRequests = useCallback(async () => {
+        if (!user) return;
+
+        try {
+            const data = await getUserLeaves();
+            setLeaveRequests(data || []);
+            
+            // Calculate leave stats
+            const pendingLeaves = data?.filter(leave => leave.status === 'Pending').length || 0;
+            const rejectedLeaves = data?.filter(leave => leave.status === 'Rejected').length || 0;
+            
+            setDashboardStats(prev => ({
+                ...prev,
+                pendingLeaves,
+                rejectedLeaves,
+            }));
+        } catch (error) {
+            console.error('Error fetching leave requests:', error);
+        }
+    }, [user]);
+
+    // Fetch attendance statistics
+    const fetchAttendanceStats = useCallback(async () => {
+        if (!user) return;
+
+        try {
+            const today = new Date();
+            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            const startOfMonthStr = startOfMonth.toISOString().split('T')[0];
+            const todayStr = today.toISOString().split('T')[0];
+
+            // Fetch monthly attendance records
+            const { data: monthlyData, error: monthlyError } = await supabase
+                .from('attendance')
+                .select('*')
+                .eq('user_id', user.id)
+                .gte('date', startOfMonthStr)
+                .lte('date', todayStr);
+
+            if (monthlyError) {
+                console.error('Error fetching monthly attendance:', monthlyError);
+                return;
+            }
+
+            // Calculate stats
+            const monthlyAttendance = monthlyData?.length || 0;
+            const workingDays = Math.ceil((today.getTime() - startOfMonth.getTime()) / (1000 * 60 * 60 * 24));
+            const attendancePercentage = workingDays > 0 ? Math.round((monthlyAttendance / workingDays) * 100) : 0;
+
+            // Calculate today's hours
+            const todayRecord = monthlyData?.find(record => record.date === todayStr);
+            const todayHours = todayRecord?.total_hours || 0;
+
+            setDashboardStats(prev => ({
+                ...prev,
+                todayHours: parseFloat(todayHours.toFixed(1)),
+                monthlyAttendance,
+                attendancePercentage: Math.min(attendancePercentage, 100),
+            }));
+        } catch (error) {
+            console.error('Error fetching attendance stats:', error);
+        }
+    }, [user]);
+
+    // Initial data fetch
+    useEffect(() => {
+        if (user) {
+            const fetchData = async () => {
+                setLoading(true);
+                await Promise.all([
+                    fetchTodayAttendance(),
+                    fetchLeaveRequests(),
+                    fetchAttendanceStats(),
+                ]);
+                setLoading(false);
+            };
+
+            fetchData();
+        }
+    }, [user, fetchTodayAttendance, fetchLeaveRequests, fetchAttendanceStats]);
+
+    // Set up real-time subscriptions
+    useEffect(() => {
+        if (!user) return;
+
+        const attendanceSubscription = supabase
+            .channel('attendance_changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'attendance',
+                    filter: `user_id=eq.${user.id}`,
+                },
+                (payload) => {
+                    console.log('Attendance change:', payload);
+                    fetchTodayAttendance();
+                    fetchAttendanceStats();
+                }
+            )
+            .subscribe();
+
+        const leaveSubscription = supabase
+            .channel('leave_changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'leaves',
+                    filter: `user_id=eq.${user.id}`,
+                },
+                (payload) => {
+                    console.log('Leave change:', payload);
+                    fetchLeaveRequests();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(attendanceSubscription);
+            supabase.removeChannel(leaveSubscription);
+        };
+    }, [user, fetchTodayAttendance, fetchLeaveRequests]);
+
+    const onRefresh = useCallback(async () => {
         setRefreshing(true);
-        setTimeout(() => {
-            setRefreshing(false);
-        }, 1000);
-    }, []);
+        await Promise.all([
+            fetchTodayAttendance(),
+            fetchLeaveRequests(),
+            fetchAttendanceStats(),
+        ]);
+        setRefreshing(false);
+    }, [fetchTodayAttendance, fetchLeaveRequests, fetchAttendanceStats]);
 
     const handleClockAction = () => {
         if (isClockIn) {
@@ -108,7 +314,7 @@ export default function Home() {
             "Are you sure you want to logout?",
             [
                 { text: "Cancel", style: "cancel" },
-                { text: "Logout", style: "destructive", onPress: logout }
+                { text: "Logout", style: "destructive", onPress: signOut }
             ]
         );
     };
@@ -152,7 +358,7 @@ export default function Home() {
         }
     };
 
-    const formatUsername = (email) => {
+    const formatUsername = (email: string) => {
         if (!email) return "User";
         const username = email.split('@')[0];
         return username.charAt(0).toUpperCase() + username.slice(1);
@@ -164,6 +370,27 @@ export default function Home() {
         if (hour < 17) return "Good Afternoon";
         return "Good Evening";
     };
+
+    const getWorkingHours = () => {
+        if (!todayAttendance?.clock_in) return "0h 0m";
+        
+        const clockIn = new Date(todayAttendance.clock_in);
+        const clockOut = todayAttendance.clock_out ? new Date(todayAttendance.clock_out) : new Date();
+        const diff = clockOut.getTime() - clockIn.getTime();
+        
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        
+        return `${hours}h ${minutes}m`;
+    };
+
+    if (loading) {
+        return (
+            <View style={[styles.container, styles.centered]}>
+                <Text>Loading...</Text>
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
@@ -190,17 +417,20 @@ export default function Home() {
                         <View style={styles.userSection}>
                             <View style={styles.userInfo}>
                                 <Text style={styles.greeting}>
-                                    {getGreeting()}, {user?.user_metadata?.full_name || formatUsername(user?.email) || "User"}!
+                                    {getGreeting()}, {user?.user_metadata?.full_name || formatUsername(user?.email || "") || "User"}!
                                 </Text>
                                 <Text style={styles.dateText}>
                                     {formatDate(currentTime, "long")}
                                 </Text>
                             </View>
                             
-                            <TouchableOpacity style={styles.profileButton}>
+                            <TouchableOpacity 
+                                style={styles.profileButton}
+                                onPress={() => router.push("/profile")}
+                            >
                                 <View style={styles.profileAvatar}>
                                     <Text style={styles.profileInitial}>
-                                        {(user?.user_metadata?.full_name || formatUsername(user?.email) || "U").charAt(0)}
+                                        {(user?.user_metadata?.full_name || formatUsername(user?.email || "") || "U").charAt(0)}
                                     </Text>
                                 </View>
                             </TouchableOpacity>
@@ -225,7 +455,9 @@ export default function Home() {
                                         {getStatusText()}
                                     </Text>
                                     {attendanceStatus === "working" && (
-                                        <Text style={styles.workingHours}>8h 24m elapsed</Text>
+                                        <Text style={styles.workingHours}>
+                                            {getWorkingHours()} elapsed
+                                        </Text>
                                     )}
                                 </View>
                             </View>
@@ -233,13 +465,13 @@ export default function Home() {
                     </View>
                 </View>
 
-                {/* Quick Stats */}
-                <View style={styles.quickStatsContainer}>
+                {/* Quick Stats - Real-time Data */}
+                {/* <View style={styles.quickStatsContainer}>
                     <View style={styles.quickStatCard}>
                         <View style={styles.quickStatIcon}>
                             <Ionicons name="time" size={20} color={Colors.light.primary || "#007bff"} />
                         </View>
-                        <Text style={styles.quickStatValue}>8.5h</Text>
+                        <Text style={styles.quickStatValue}>{dashboardStats.todayHours}h</Text>
                         <Text style={styles.quickStatLabel}>Today</Text>
                     </View>
                     
@@ -247,7 +479,7 @@ export default function Home() {
                         <View style={styles.quickStatIcon}>
                             <Ionicons name="calendar" size={20} color="#28a745" />
                         </View>
-                        <Text style={styles.quickStatValue}>22</Text>
+                        <Text style={styles.quickStatValue}>{dashboardStats.monthlyAttendance}</Text>
                         <Text style={styles.quickStatLabel}>This Month</Text>
                     </View>
                     
@@ -255,10 +487,47 @@ export default function Home() {
                         <View style={styles.quickStatIcon}>
                             <Ionicons name="trending-up" size={20} color="#ffc107" />
                         </View>
-                        <Text style={styles.quickStatValue}>95%</Text>
+                        <Text style={styles.quickStatValue}>{dashboardStats.attendancePercentage}%</Text>
                         <Text style={styles.quickStatLabel}>Attendance</Text>
                     </View>
-                </View>
+                </View> */}
+
+                {/* Leave Status Cards */}
+                {(dashboardStats.pendingLeaves > 0 || dashboardStats.rejectedLeaves > 0) && (
+                    <View style={styles.leaveStatusContainer}>
+                        {dashboardStats.pendingLeaves > 0 && (
+                            <TouchableOpacity 
+                                style={[styles.leaveStatusCard, { borderLeftColor: '#ffc107' }]}
+                                onPress={() => router.push('/leave/status')}
+                            >
+                                <View style={styles.leaveStatusContent}>
+                                    <Ionicons name="hourglass" size={24} color="#ffc107" />
+                                    <View style={styles.leaveStatusText}>
+                                        <Text style={styles.leaveStatusTitle}>Pending Approvals</Text>
+                                        <Text style={styles.leaveStatusCount}>{dashboardStats.pendingLeaves} request{dashboardStats.pendingLeaves !== 1 ? 's' : ''}</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={18} color="#666" />
+                                </View>
+                            </TouchableOpacity>
+                        )}
+
+                        {dashboardStats.rejectedLeaves > 0 && (
+                            <TouchableOpacity 
+                                style={[styles.leaveStatusCard, { borderLeftColor: '#dc3545' }]}
+                                onPress={() => router.push('/leave/status')}
+                            >
+                                <View style={styles.leaveStatusContent}>
+                                    <Ionicons name="close-circle" size={24} color="#dc3545" />
+                                    <View style={styles.leaveStatusText}>
+                                        <Text style={styles.leaveStatusTitle}>Rejected Requests</Text>
+                                        <Text style={styles.leaveStatusCount}>{dashboardStats.rejectedLeaves} request{dashboardStats.rejectedLeaves !== 1 ? 's' : ''}</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={18} color="#666" />
+                                </View>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                )}
 
                 {/* Timer Widget */}
                 <View style={styles.card}>
@@ -271,7 +540,10 @@ export default function Home() {
                             />
                             <Text style={styles.cardTitle}>Today's Activity</Text>
                         </View>
-                        <TouchableOpacity style={styles.cardAction}>
+                        <TouchableOpacity 
+                            style={styles.cardAction}
+                            onPress={onRefresh}
+                        >
                             <Ionicons name="refresh" size={18} color={Colors.light.gray400 || "#6c757d"} />
                         </TouchableOpacity>
                     </View>
@@ -330,46 +602,20 @@ export default function Home() {
                             }
                         />
                         <Button
-                            title="Profile"
-                            onPress={() => router.push("/profile")}
+                            title="Apply Leave"
+                            onPress={() => router.push("/leave/apply")}
                             variant="ghost"
                             size="medium"
                             style={styles.secondaryButton}
                             icon={
                                 <Ionicons
-                                    name="analytics"
+                                    name="calendar"
                                     size={18}
                                     color={Colors.light.primary || "#007bff"}
                                     style={{ marginRight: 6 }}
                                 />
                             }
                         />
-                    </View>
-                </View>
-
-                {/* Quick Actions */}
-                <View style={styles.quickActionsSection}>
-                    <Text style={styles.sectionTitle}>Quick Actions</Text>
-                    <View style={styles.quickActions}>
-                        <TouchableOpacity style={styles.quickActionItem}>
-                            <Ionicons name="calendar-outline" size={24} color={Colors.light.primary || "#007bff"} />
-                            <Text style={styles.quickActionText}>Schedule</Text>
-                        </TouchableOpacity>
-                        
-                        <TouchableOpacity style={styles.quickActionItem}>
-                            <Ionicons name="document-text-outline" size={24} color="#28a745" />
-                            <Text style={styles.quickActionText}>Reports</Text>
-                        </TouchableOpacity>
-                        
-                        <TouchableOpacity style={styles.quickActionItem}>
-                            <Ionicons name="settings-outline" size={24} color="#6c757d" />
-                            <Text style={styles.quickActionText}>Settings</Text>
-                        </TouchableOpacity>
-                        
-                        <TouchableOpacity style={styles.quickActionItem} onPress={handleLogout}>
-                            <Ionicons name="exit-outline" size={24} color="#dc3545" />
-                            <Text style={styles.quickActionText}>Logout</Text>
-                        </TouchableOpacity>
                     </View>
                 </View>
             </ScrollView>
@@ -379,6 +625,7 @@ export default function Home() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#f8f9fa" },
+    centered: { justifyContent: "center", alignItems: "center" },
     scrollContent: { paddingBottom: 20 },
     header: {
         backgroundColor: Colors.light.primary || "#007bff",
@@ -414,6 +661,26 @@ const styles = StyleSheet.create({
     quickStatIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#f8f9fa", justifyContent: "center", alignItems: "center", marginBottom: 8 },
     quickStatValue: { fontSize: 18, fontWeight: "700", color: "#333", marginBottom: 4 },
     quickStatLabel: { fontSize: 12, color: "#666", fontWeight: "500" },
+    
+    // Leave Status Styles
+    leaveStatusContainer: { paddingHorizontal: 20, marginTop: 10 },
+    leaveStatusCard: { 
+        backgroundColor: "#fff", 
+        borderRadius: 12, 
+        padding: 16, 
+        marginBottom: 8, 
+        borderLeftWidth: 4,
+        shadowColor: "#000", 
+        shadowOffset: { width: 0, height: 1 }, 
+        shadowOpacity: 0.05, 
+        shadowRadius: 4, 
+        elevation: 2 
+    },
+    leaveStatusContent: { flexDirection: "row", alignItems: "center" },
+    leaveStatusText: { flex: 1, marginLeft: 12 },
+    leaveStatusTitle: { fontSize: 14, fontWeight: "600", color: "#333", marginBottom: 2 },
+    leaveStatusCount: { fontSize: 12, color: "#666" },
+
     card: { backgroundColor: "#fff", marginHorizontal: 20, marginTop: 16, borderRadius: 20, padding: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
     cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
     cardTitleContainer: { flexDirection: "row", alignItems: "center" },
@@ -425,11 +692,6 @@ const styles = StyleSheet.create({
     primaryAction: { marginBottom: 12, borderRadius: 16, paddingVertical: 16 },
     secondaryActions: { flexDirection: "row", gap: 12 },
     secondaryButton: { flex: 1, borderRadius: 12 },
-    quickActionsSection: { paddingHorizontal: 20, marginTop: 24 },
-    sectionTitle: { fontSize: 18, fontWeight: "600", color: "#333", marginBottom: 16 },
-    quickActions: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-    quickActionItem: { backgroundColor: "#fff", width: (width - 56) / 2, padding: 20, borderRadius: 16, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-    quickActionText: { fontSize: 14, fontWeight: "500", color: "#333", marginTop: 8 },
 
     // Attendance Switch Styles
     attendanceSwitchContainer: { flexDirection: "row", justifyContent: "space-around", marginVertical: 10 },

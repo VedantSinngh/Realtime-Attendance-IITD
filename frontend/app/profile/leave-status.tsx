@@ -5,58 +5,144 @@ import {
     StyleSheet, 
     ScrollView, 
     SafeAreaView,
-    RefreshControl
+    RefreshControl,
+    ActivityIndicator
 } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import LeaveInfoCard from "./LeaveInfoCard";
+import { useState, useEffect } from 'react';
+import { getUserLeaves } from "../../services/supabase";
+
+// Enhanced Leave Card Component
+function LeaveRequestCard({ leave }: any) {
+    const getStatusColor = (status: string) => {
+        switch (status?.toLowerCase()) {
+            case 'approved': return '#4CAF50';
+            case 'rejected': return '#f44336';
+            case 'pending': return '#FF9800';
+            default: return '#757575';
+        }
+    };
+
+    const getStatusIcon = (status: string) => {
+        switch (status?.toLowerCase()) {
+            case 'approved': return 'checkmark-circle';
+            case 'rejected': return 'close-circle';
+            case 'pending': return 'time-outline';
+            default: return 'help-circle';
+        }
+    };
+
+    const formatDate = (dateString: string) => {
+        return new Date(dateString).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+    };
+
+    const getDuration = () => {
+        if (leave.start_date === leave.end_date) return "1 day";
+        const start = new Date(leave.start_date);
+        const end = new Date(leave.end_date);
+        const diffTime = Math.abs(end.getTime() - start.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        return `${diffDays} days`;
+    };
+
+    return (
+        <View style={styles.leaveCard}>
+            {/* Header with Status */}
+            <View style={styles.cardHeader}>
+                <View style={styles.leaveTypeContainer}>
+                    <Ionicons name="calendar-outline" size={16} color="#2196F3" />
+                    <Text style={styles.leaveType}>{leave.leave_type}</Text>
+                </View>
+                <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(leave.status)}15` }]}>
+                    <Ionicons 
+                        name={getStatusIcon(leave.status)} 
+                        size={14} 
+                        color={getStatusColor(leave.status)} 
+                    />
+                    <Text style={[styles.statusText, { color: getStatusColor(leave.status) }]}>
+                        {leave.status}
+                    </Text>
+                </View>
+            </View>
+
+            {/* Leave Details */}
+            <View style={styles.cardBody}>
+                <View style={styles.detailRow}>
+                    <View style={styles.detailItem}>
+                        <Text style={styles.detailLabel}>Duration</Text>
+                        <Text style={styles.detailValue}>
+                            {formatDate(leave.start_date)} - {formatDate(leave.end_date)}
+                        </Text>
+                        <Text style={styles.detailSubValue}>({getDuration()})</Text>
+                    </View>
+                </View>
+
+                <View style={styles.detailRow}>
+                    <View style={styles.detailItem}>
+                        <Text style={styles.detailLabel}>Applied On</Text>
+                        <Text style={styles.detailValue}>
+                            {formatDate(leave.created_at)}
+                        </Text>
+                    </View>
+                </View>
+
+                {leave.reason && (
+                    <View style={styles.reasonContainer}>
+                        <Text style={styles.reasonLabel}>Reason</Text>
+                        <Text style={styles.reasonText}>{leave.reason}</Text>
+                    </View>
+                )}
+            </View>
+        </View>
+    );
+}
 
 export default function LeaveStatusScreen() {
     const [refreshing, setRefreshing] = useState(false);
+    const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    const fetchLeaves = async () => {
+        try {
+            setLoading(true);
+            const data = await getUserLeaves();
+            setLeaveRequests(data || []);
+        } catch (error) {
+            console.error("Error fetching leaves:", error);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchLeaves();
+    }, []);
 
     const onRefresh = () => {
         setRefreshing(true);
-        // Simulate API call
-        setTimeout(() => {
-            setRefreshing(false);
-        }, 1000);
+        fetchLeaves();
     };
 
-    // Sample leave data - replace with actual data from your API
-    const leaveRequests = [
-        {
-            id: 1,
-            appliedOn: "01-08-2025",
-            appliedFor: "05-08-2025",
-            type: "Sick Leave",
-            status: "Approved",
-            duration: "1 day",
-            description: "Medical appointment"
-        },
-        {
-            id: 2,
-            appliedOn: "15-07-2025",
-            appliedFor: "20-07-2025 - 22-07-2025",
-            type: "Casual Leave",
-            status: "Pending",
-            duration: "3 days",
-            description: "Personal work"
-        },
-        {
-            id: 3,
-            appliedOn: "10-07-2025",
-            appliedFor: "12-07-2025",
-            type: "Work from Home",
-            status: "Rejected",
-            duration: "1 day",
-            description: "Family emergency"
-        }
-    ];
-
-    const getStatusCount = (status) => {
-        return leaveRequests.filter(leave => leave.status.toLowerCase() === status.toLowerCase()).length;
+    const getStatusCount = (status: string) => {
+        return leaveRequests.filter(leave => leave.status?.toLowerCase() === status.toLowerCase()).length;
     };
+
+    if (loading) {
+        return (
+            <SafeAreaView style={styles.safeArea}>
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#2196F3" />
+                    <Text style={styles.loadingText}>Loading your leave requests...</Text>
+                </View>
+            </SafeAreaView>
+        );
+    }
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -65,7 +151,12 @@ export default function LeaveStatusScreen() {
                 contentContainerStyle={styles.contentContainer}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                    <RefreshControl 
+                        refreshing={refreshing} 
+                        onRefresh={onRefresh}
+                        colors={['#2196F3']}
+                        tintColor="#2196F3"
+                    />
                 }
             >
                 {/* Header */}
@@ -74,11 +165,14 @@ export default function LeaveStatusScreen() {
                         style={styles.backButton} 
                         onPress={() => router.back()}
                     >
-                        <Ionicons name="arrow-back" size={24} color="#333" />
+                        <Ionicons name="chevron-back" size={24} color="#2196F3" />
                     </TouchableOpacity>
-                    <Text style={styles.title}>Leave Status</Text>
+                    <View>
+                        <Text style={styles.title}>Leave Status</Text>
+                        <Text style={styles.subtitle}>Track your leave requests</Text>
+                    </View>
                     <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
-                        <Ionicons name="refresh" size={22} color="#666" />
+                        <Ionicons name="refresh" size={22} color="#2196F3" />
                     </TouchableOpacity>
                 </View>
 
@@ -86,7 +180,7 @@ export default function LeaveStatusScreen() {
                 <View style={styles.summaryContainer}>
                     <View style={styles.summaryCard}>
                         <View style={styles.summaryIconContainer}>
-                            <Ionicons name="checkmark-circle" size={24} color="#28a745" />
+                            <Ionicons name="checkmark-circle" size={28} color="#4CAF50" />
                         </View>
                         <Text style={styles.summaryNumber}>{getStatusCount('Approved')}</Text>
                         <Text style={styles.summaryLabel}>Approved</Text>
@@ -94,7 +188,7 @@ export default function LeaveStatusScreen() {
 
                     <View style={styles.summaryCard}>
                         <View style={styles.summaryIconContainer}>
-                            <Ionicons name="time-outline" size={24} color="#ffc107" />
+                            <Ionicons name="time-outline" size={28} color="#FF9800" />
                         </View>
                         <Text style={styles.summaryNumber}>{getStatusCount('Pending')}</Text>
                         <Text style={styles.summaryLabel}>Pending</Text>
@@ -102,7 +196,7 @@ export default function LeaveStatusScreen() {
 
                     <View style={styles.summaryCard}>
                         <View style={styles.summaryIconContainer}>
-                            <Ionicons name="close-circle" size={24} color="#dc3545" />
+                            <Ionicons name="close-circle" size={28} color="#f44336" />
                         </View>
                         <Text style={styles.summaryNumber}>{getStatusCount('Rejected')}</Text>
                         <Text style={styles.summaryLabel}>Rejected</Text>
@@ -111,276 +205,324 @@ export default function LeaveStatusScreen() {
 
                 {/* Leave Requests Section */}
                 <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Recent Leave Requests</Text>
+                    <Text style={styles.sectionTitle}>Your Leave Requests</Text>
                     <Text style={styles.sectionSubtitle}>
                         {leaveRequests.length} total request{leaveRequests.length !== 1 ? 's' : ''}
                     </Text>
                 </View>
 
                 {/* Leave Request Cards */}
-                <View style={styles.leaveCardsContainer}>
-                    {leaveRequests.map((leave) => (
-                        <LeaveInfoCard
-                            key={leave.id}
-                            appliedOn={leave.appliedOn}
-                            appliedFor={leave.appliedFor}
-                            type={leave.type}
-                            status={leave.status}
-                            duration={leave.duration}
-                            description={leave.description}
-                        />
-                    ))}
-                </View>
-
-                {/* Empty State (if no leaves) */}
-                {leaveRequests.length === 0 && (
+                {leaveRequests.length === 0 ? (
                     <View style={styles.emptyState}>
-                        <Ionicons name="document-outline" size={64} color="#ccc" />
-                        <Text style={styles.emptyStateTitle}>No Leave Requests</Text>
+                        <View style={styles.emptyIconContainer}>
+                            <Ionicons name="calendar-outline" size={64} color="#E3F2FD" />
+                        </View>
+                        <Text style={styles.emptyStateTitle}>No Leave Requests Yet</Text>
                         <Text style={styles.emptyStateText}>
-                            You haven't applied for any leaves yet. Start by creating a new leave request.
+                            Start by applying for your first leave request. It's quick and easy!
                         </Text>
+                        <TouchableOpacity 
+                            style={styles.emptyStateButton}
+                            onPress={() => router.push("/profile/apply-leave")}
+                            activeOpacity={0.8}
+                        >
+                            <Ionicons name="add-circle-outline" size={20} color="#2196F3" />
+                            <Text style={styles.emptyStateButtonText}>Apply for Leave</Text>
+                        </TouchableOpacity>
                     </View>
+                ) : (
+                    <>
+                        <View style={styles.leaveCardsContainer}>
+                            {leaveRequests.map((leave) => (
+                                <LeaveRequestCard key={leave.id} leave={leave} />
+                            ))}
+                        </View>
+
+                        {/* Action Button */}
+                        <View style={styles.actionContainer}>
+                            <TouchableOpacity 
+                                style={styles.primaryButton}
+                                onPress={() => router.push("/profile/apply-leave")}
+                                activeOpacity={0.8}
+                            >
+                                <Ionicons name="add-circle" size={20} color="#fff" />
+                                <Text style={styles.primaryButtonText}>Apply New Leave</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </>
                 )}
-
-                {/* Action Buttons */}
-                <View style={styles.actionContainer}>
-                    <TouchableOpacity 
-                        style={styles.primaryButton}
-                        onPress={() => router.push("/profile/apply-leave")}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons name="add-circle" size={20} color="#fff" style={styles.buttonIcon} />
-                        <Text style={styles.primaryButtonText}>Apply New Leave</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity 
-                        style={styles.secondaryButton}
-                        onPress={() => { /* Handle edit functionality */ }}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons name="create-outline" size={20} color="#007bff" style={styles.buttonIcon} />
-                        <Text style={styles.secondaryButtonText}>Edit Recent Leave</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* Quick Actions */}
-                <View style={styles.quickActionsContainer}>
-                    <Text style={styles.quickActionsTitle}>Quick Actions</Text>
-                    
-                    <TouchableOpacity style={styles.quickActionItem}>
-                        <Ionicons name="calendar-outline" size={20} color="#666" />
-                        <Text style={styles.quickActionText}>View Leave Balance</Text>
-                        <Ionicons name="chevron-forward" size={16} color="#999" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.quickActionItem}>
-                        <Ionicons name="download-outline" size={20} color="#666" />
-                        <Text style={styles.quickActionText}>Download Leave Report</Text>
-                        <Ionicons name="chevron-forward" size={16} color="#999" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.quickActionItem}>
-                        <Ionicons name="settings-outline" size={20} color="#666" />
-                        <Text style={styles.quickActionText}>Leave Preferences</Text>
-                        <Ionicons name="chevron-forward" size={16} color="#999" />
-                    </TouchableOpacity>
-                </View>
             </ScrollView>
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    safeArea: {
+    safeArea: { 
+        flex: 1, 
+        backgroundColor: '#f8f9fa' 
+    },
+    container: { 
+        flex: 1 
+    },
+    contentContainer: { 
+        paddingBottom: 30 
+    },
+    loadingContainer: {
         flex: 1,
-        backgroundColor: '#f8f9fa',
-    },
-    container: {
-        flex: 1,
-    },
-    contentContainer: {
-        paddingBottom: 30,
-    },
-    header: {
-        flexDirection: 'row',
+        justifyContent: 'center',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 15,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e9ecef',
+        backgroundColor: '#fff'
     },
-    backButton: {
-        padding: 5,
+    loadingText: {
+        marginTop: 16,
+        fontSize: 16,
+        color: '#666',
+        fontWeight: '500'
     },
-    title: {
-        fontSize: 20,
+    header: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'space-between', 
+        paddingHorizontal: 20, 
+        paddingVertical: 16, 
+        backgroundColor: '#fff', 
+        borderBottomWidth: 1, 
+        borderBottomColor: '#E3F2FD' 
+    },
+    backButton: { 
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#E3F2FD',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    title: { 
+        fontSize: 22, 
+        fontWeight: '700', 
+        color: '#1976D2' 
+    },
+    subtitle: {
+        fontSize: 14,
+        color: '#666',
+        marginTop: 2
+    },
+    refreshButton: { 
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#E3F2FD',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    summaryContainer: { 
+        flexDirection: 'row', 
+        paddingHorizontal: 20, 
+        paddingTop: 20, 
+        gap: 12 
+    },
+    summaryCard: { 
+        flex: 1, 
+        backgroundColor: '#fff', 
+        borderRadius: 16, 
+        padding: 20, 
+        alignItems: 'center', 
+        shadowColor: '#2196F3', 
+        shadowOffset: { width: 0, height: 2 }, 
+        shadowOpacity: 0.1, 
+        shadowRadius: 4, 
+        elevation: 2,
+        borderWidth: 1,
+        borderColor: '#E3F2FD'
+    },
+    summaryIconContainer: { 
+        marginBottom: 12 
+    },
+    summaryNumber: { 
+        fontSize: 28, 
+        fontWeight: '800', 
+        color: '#1976D2', 
+        marginBottom: 4 
+    },
+    summaryLabel: { 
+        fontSize: 12, 
+        color: '#666', 
         fontWeight: '600',
-        color: '#333',
+        textTransform: 'uppercase'
     },
-    refreshButton: {
-        padding: 5,
+    sectionHeader: { 
+        paddingHorizontal: 20, 
+        paddingTop: 30, 
+        paddingBottom: 16 
     },
-    summaryContainer: {
-        flexDirection: 'row',
-        paddingHorizontal: 20,
-        paddingTop: 20,
-        gap: 12,
+    sectionTitle: { 
+        fontSize: 20, 
+        fontWeight: '700', 
+        color: '#1976D2', 
+        marginBottom: 4 
     },
-    summaryCard: {
-        flex: 1,
+    sectionSubtitle: { 
+        fontSize: 14, 
+        color: '#666' 
+    },
+    leaveCardsContainer: { 
+        paddingHorizontal: 20, 
+        gap: 16 
+    },
+    leaveCard: {
         backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 16,
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
+        borderRadius: 16,
+        padding: 20,
+        shadowColor: '#2196F3',
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
         elevation: 2,
+        borderWidth: 1,
+        borderColor: '#E3F2FD'
     },
-    summaryIconContainer: {
-        marginBottom: 8,
-    },
-    summaryNumber: {
-        fontSize: 24,
-        fontWeight: '700',
-        color: '#333',
-        marginBottom: 4,
-    },
-    summaryLabel: {
-        fontSize: 12,
-        color: '#666',
-        fontWeight: '500',
-    },
-    sectionHeader: {
-        paddingHorizontal: 20,
-        paddingTop: 30,
-        paddingBottom: 15,
-    },
-    sectionTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#333',
-        marginBottom: 4,
-    },
-    sectionSubtitle: {
-        fontSize: 14,
-        color: '#666',
-    },
-    leaveCardsContainer: {
-        paddingHorizontal: 20,
-        gap: 12,
-    },
-    emptyState: {
+    cardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: 60,
-        paddingHorizontal: 20,
+        marginBottom: 16
     },
-    emptyStateTitle: {
+    leaveTypeContainer: {
+        flexDirection: 'row',
+        alignItems: 'center'
+    },
+    leaveType: {
         fontSize: 18,
-        fontWeight: '600',
-        color: '#666',
-        marginTop: 16,
-        marginBottom: 8,
+        fontWeight: '700',
+        color: '#1976D2',
+        marginLeft: 8
     },
-    emptyStateText: {
-        fontSize: 14,
-        color: '#999',
-        textAlign: 'center',
-        lineHeight: 20,
-    },
-    actionContainer: {
-        paddingHorizontal: 20,
-        paddingTop: 25,
-        gap: 12,
-    },
-    primaryButton: {
-        backgroundColor: '#007bff',
-        borderRadius: 12,
-        paddingVertical: 16,
-        paddingHorizontal: 20,
+    statusBadge: {
         flexDirection: 'row',
         alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20
+    },
+    statusText: {
+        fontSize: 12,
+        fontWeight: '600',
+        marginLeft: 4,
+        textTransform: 'uppercase'
+    },
+    cardBody: {
+        gap: 12
+    },
+    detailRow: {
+        flexDirection: 'row',
+        gap: 16
+    },
+    detailItem: {
+        flex: 1
+    },
+    detailLabel: {
+        fontSize: 12,
+        color: '#2196F3',
+        fontWeight: '600',
+        marginBottom: 4,
+        textTransform: 'uppercase'
+    },
+    detailValue: {
+        fontSize: 16,
+        color: '#333',
+        fontWeight: '600',
+        marginBottom: 2
+    },
+    detailSubValue: {
+        fontSize: 14,
+        color: '#666'
+    },
+    reasonContainer: {
+        backgroundColor: '#f8f9fa',
+        padding: 12,
+        borderRadius: 8,
+        borderLeftWidth: 4,
+        borderLeftColor: '#2196F3'
+    },
+    reasonLabel: {
+        fontSize: 12,
+        color: '#2196F3',
+        fontWeight: '600',
+        marginBottom: 6,
+        textTransform: 'uppercase'
+    },
+    reasonText: {
+        fontSize: 14,
+        color: '#333',
+        lineHeight: 20
+    },
+    emptyState: { 
+        alignItems: 'center', 
+        paddingVertical: 60, 
+        paddingHorizontal: 20,
+        backgroundColor: '#fff',
+        marginHorizontal: 20,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#E3F2FD'
+    },
+    emptyIconContainer: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        backgroundColor: '#f8f9fa',
         justifyContent: 'center',
-        shadowColor: '#007bff',
-        shadowOffset: {
-            width: 0,
-            height: 4,
-        },
+        alignItems: 'center',
+        marginBottom: 24
+    },
+    emptyStateTitle: { 
+        fontSize: 20, 
+        fontWeight: '700', 
+        color: '#1976D2', 
+        marginBottom: 12 
+    },
+    emptyStateText: { 
+        fontSize: 16, 
+        color: '#666', 
+        textAlign: 'center', 
+        lineHeight: 24,
+        marginBottom: 24
+    },
+    emptyStateButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#E3F2FD',
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 25,
+        gap: 8
+    },
+    emptyStateButtonText: {
+        color: '#2196F3',
+        fontSize: 16,
+        fontWeight: '600'
+    },
+    actionContainer: { 
+        paddingHorizontal: 20, 
+        paddingTop: 30
+    },
+    primaryButton: { 
+        backgroundColor: '#2196F3', 
+        borderRadius: 12, 
+        paddingVertical: 16, 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        gap: 8,
+        shadowColor: '#2196F3',
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
-        elevation: 4,
+        elevation: 4
     },
-    secondaryButton: {
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        paddingVertical: 16,
-        paddingHorizontal: 20,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: '#007bff',
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 1,
-        },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
-        elevation: 1,
-    },
-    buttonIcon: {
-        marginRight: 8,
-    },
-    primaryButtonText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    secondaryButtonText: {
-        color: '#007bff',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    quickActionsContainer: {
-        marginTop: 30,
-        paddingHorizontal: 20,
-    },
-    quickActionsTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#333',
-        marginBottom: 15,
-    },
-    quickActionItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#fff',
-        paddingVertical: 16,
-        paddingHorizontal: 16,
-        borderRadius: 12,
-        marginBottom: 8,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 1,
-        },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
-        elevation: 1,
-    },
-    quickActionText: {
-        flex: 1,
-        marginLeft: 12,
-        fontSize: 15,
-        color: '#333',
-        fontWeight: '500',
+    primaryButtonText: { 
+        color: '#fff', 
+        fontSize: 16, 
+        fontWeight: '700' 
     },
 });

@@ -2,26 +2,96 @@ import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import React from "react";
 import { AuthProvider } from "../services/AuthContext";
-import { LeaveProvider } from "../app/profile/leave-context"; 
+import { LeaveProvider } from "../app/profile/leave-context";
+import { StatusBar } from "expo-status-bar";
+import ErrorBoundary from "../components/ErrorBoundary";
+
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <LeaveProvider> {/* Wrap entire app */}
-          <Stack>
-            {/* Public routes (no auth) */}
-            <Stack.Screen name="onboarding/index" options={{ headerShown: false }} />
-            <Stack.Screen name="onboarding/signin" options={{ headerShown: false }} />
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <StatusBar style="auto" />
+        <AuthProvider>
+          <LeaveProvider>
+            <Stack screenOptions={{ 
+              headerShown: false,
+              gestureEnabled: true,
+              animation: 'slide_from_right',
+            }}>
+              {/* Entry point */}
+              <Stack.Screen 
+                name="index" 
+                options={{ 
+                  headerShown: false,
+                  gestureEnabled: false, // Prevent gesture on entry screen
+                }} 
+              />
+              
+              {/* Public routes (no auth required) */}
+              <Stack.Screen 
+                name="onboarding/index" 
+                options={{ 
+                  headerShown: false,
+                  gestureEnabled: false, // Prevent back gesture on onboarding
+                }} 
+              />
+              <Stack.Screen 
+                name="onboarding/signin" 
+                options={{ 
+                  headerShown: false,
+                  presentation: 'modal', // Make signin feel like a modal
+                }} 
+              />
 
-            {/* Protected section */}
-            <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="clock" options={{ headerShown: false }} />
-            <Stack.Screen name="face-verification" options={{ headerShown: false }} />
-            <Stack.Screen name="profile" options={{ headerShown: false }} />
-          </Stack>
-        </LeaveProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+              {/* User protected routes */}
+              <Stack.Screen 
+                name="(tabs)" 
+                options={{ 
+                  headerShown: false,
+                  gestureEnabled: false, // Prevent gesture on main tabs
+                }} 
+              />
+              <Stack.Screen 
+                name="home" 
+                options={{ 
+                  headerShown: false,
+                  gestureEnabled: false,
+                }} 
+              />
+              <Stack.Screen 
+                name="clock" 
+                options={{ 
+                  headerShown: false,
+                  presentation: 'card',
+                }} 
+              />
+              <Stack.Screen 
+                name="face-verification" 
+                options={{ 
+                  headerShown: false,
+                  presentation: 'modal',
+                }} 
+              />
+              <Stack.Screen 
+                name="profile" 
+                options={{ 
+                  headerShown: false,
+                  presentation: 'card',
+                }} 
+              />
+
+              {/* Admin-only routes */}
+              <Stack.Screen 
+                name="admin" 
+                options={{ 
+                  headerShown: false,
+                  gestureEnabled: false, // Prevent gesture on admin dashboard
+                }} 
+              />
+            </Stack>
+          </LeaveProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

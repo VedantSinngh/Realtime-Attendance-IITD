@@ -1,30 +1,30 @@
-import React from 'react';
-import { View, Text, Button, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useEffect } from "react";
+import { useAuth } from "../services/AuthContext";
+import { router } from "expo-router";
+import { View, ActivityIndicator } from "react-native";
 
-export default function HomeScreen() {
-    const router = useRouter();
+export default function Index() {
+    const { role, loading } = useAuth();
 
-    return (
-        <View style={styles.container}>
-            <Text style={styles.title}>Welcome to the App</Text>
-            <Button
-                title="Go to Sign In"
-                onPress={() => router.push('/onboarding/signin')}
-            />
-        </View>
-    );
+    useEffect(() => {
+        if (!loading) {
+            if (role === "admin") {
+                router.replace("/admin"); // Redirect to admin dashboard
+            } else if (role === "user") {
+                router.replace("/home"); // Redirect to normal app
+            } else {
+                router.replace("/onboarding/signin"); // Not logged in
+            }
+        }
+    }, [role, loading]);
+
+    if (loading) {
+        return (
+            <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+                <ActivityIndicator size="large" />
+            </View>
+        );
+    }
+
+    return null;
 }
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20,
-    },
-    title: {
-        fontSize: 24,
-        marginBottom: 20,
-    },
-});
