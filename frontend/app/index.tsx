@@ -1,25 +1,30 @@
-import React, { useEffect } from "react";
-import { View, Image, StyleSheet } from "react-native";
-import { useRouter } from "expo-router";
+import { useEffect } from "react";
+import { useAuth } from "../services/AuthContext";
+import { router } from "expo-router";
+import { View, ActivityIndicator } from "react-native";
 
-export default function Splash() {
-    const router = useRouter();
+export default function Index() {
+    const { role, loading } = useAuth();
 
     useEffect(() => {
-        const t = setTimeout(() => {
-            router.replace("/onboarding/signin");
-        }, 1200);
-        return () => clearTimeout(t);
-    }, []);
+        if (!loading) {
+            if (role === "admin") {
+                router.replace("/admin"); // Redirect to admin dashboard
+            } else if (role === "user") {
+                router.replace("/home"); // Redirect to normal app
+            } else {
+                router.replace("/onboarding/signin"); // Not logged in
+            }
+        }
+    }, [role, loading]);
 
-    return (
-        <View style={styles.container}>
-            <Image source={require("../assets/images/logo.png")} style={styles.logo} />
-        </View>
-    );
+    if (loading) {
+        return (
+            <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+                <ActivityIndicator size="large" />
+            </View>
+        );
+    }
+
+    return null;
 }
-
-const styles = StyleSheet.create({
-    container: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff" },
-    logo: { width: 160, height: 160, resizeMode: "contain" },
-});
