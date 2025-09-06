@@ -1,297 +1,175 @@
-# Realtime-Attendance
+# Realtime Attendance System - IITD
+---
 
-# Face Recognition Web Application - Complete Architecture Guide
+## 🚀 Quick Start
 
-## 🏗️ Architecture Overview
+### Frontend (Expo/React Native)
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    WEB APPLICATION STACK                    │
-├─────────────────────────────────────────────────────────────┤
-│ Frontend (React/HTML)     │ Backend API (Flask/FastAPI)     │
-│ ├── Dashboard             │ ├── Face Registration API       │
-│ ├── Live Camera Feed      │ ├── Attendance Scanner API      │
-│ ├── Registration Form     │ ├── Attendance Reports API      │
-│ ├── Attendance Reports    │ ├── Face Management API         │
-│ └── Settings              │ └── WebSocket for Live Updates  │
-├─────────────────────────────────────────────────────────────┤
-│                    YOUR EXISTING BACKEND                    │
-│ ├── app_2.py (Core Logic) - NO CHANGES NEEDED             │
-│ ├── Face Detection        - NO CHANGES NEEDED             │
-│ ├── Face Embedding        - NO CHANGES NEEDED             │
-│ ├── Supabase Integration  - NO CHANGES NEEDED             │
-│ └── Attendance Logger     - NO CHANGES NEEDED             │
-├─────────────────────────────────────────────────────────────┤
-│                        DATABASE                             │
-│ └── Supabase (faces, attendance tables) - NO CHANGES       │
-└─────────────────────────────────────────────────────────────┘
+```bash
+cd frontend
+npm install           # Install dependencies
+npx expo start        # Start Expo dev server
 ```
 
-## 📁 Project Structure
+- Open on **Web** by pressing `w`, on **Android** by pressing `a`, or **iOS** by pressing `i`.
+- Main entry: `expo-router/entry` (see package.json).
+- All screens/components live in `frontend/app` and `frontend/services`.
 
-```
-Face_Recognition_IITD/
-├── backend/                    # Your existing code (NO CHANGES)
-│   ├── app_2.py               # Keep as is
-│   ├── detection/             # Keep as is
-│   ├── embedding/             # Keep as is
-│   ├── supabase_utils/        # Keep as is
-│   └── utils/                 # Keep as is
-├── webapp/                     # NEW - Web application
-│   ├── backend_api/           # NEW - API wrapper
-│   │   ├── app.py            # Flask/FastAPI server
-│   │   ├── api_routes.py     # API endpoints
-│   │   └── websocket_handler.py # Real-time updates
-│   ├── frontend/              # NEW - Web interface
-│   │   ├── public/           # Static files
-│   │   ├── src/              # React components
-│   │   ├── package.json      # Dependencies
-│   │   └── index.html        # Main page
-│   └── requirements.txt       # Web app dependencies
-└── shared/                     # NEW - Shared utilities
-    └── config.py              # Shared configuration
+### Backend (Python)
+
+```bash
+cd backend
+pip install -r requirements.txt
+python app.py         # or python api_server.py, depending on your API entry point
 ```
 
-## 🚀 Step-by-Step Implementation Plan
+- All logic is modularized:
+  - `detection/`: Face detection modules
+  - `embedding/`: Face embedding extraction
+  - `supabase_utils/`: Cloud DB integration
+  - `utils/`: Utility functions (drawing, similarity, etc.)
+  - `test_images/`: Example/test images
 
-### Phase 1: API Wrapper (Week 1)
-- Create Flask/FastAPI wrapper around your existing code
-- Expose REST endpoints for frontend
-- Add WebSocket for real-time camera feed
+---
 
-### Phase 2: Basic Frontend (Week 2)
-- Create React dashboard
-- Build registration form
-- Display attendance reports
+## 📦 Project Structure
 
-### Phase 3: Live Camera Integration (Week 3)
-- Integrate camera feed in browser
-- Real-time face recognition display
-- Live attendance marking
-
-### Phase 4: Advanced Features (Week 4)
-- User management
-- Advanced reports and analytics
-- Settings and configuration
-
-## 🛠️ Technology Stack Recommendations
-
-### Backend API Layer (Wrapper)
-- **Flask** (Simple, quick to implement)
-- **FastAPI** (Better performance, automatic docs)
-- **WebSocket** (Socket.IO for real-time updates)
-
-### Frontend Options
-- **Option A: React** (Modern, component-based)
-- **Option B: HTML + JavaScript** (Simpler, no build process)
-- **Option C: Streamlit** (Rapid prototyping)
-
-### Real-time Communication
-- **WebSocket** for live camera feed
-- **Server-Sent Events** for attendance updates
-- **REST API** for CRUD operations
-
-## 📋 Detailed Implementation Steps
-
-### Step 1: Create API Wrapper
-```python
-# webapp/backend_api/app.py
-from flask import Flask, jsonify, request
-import sys
-import os
-
-# Add your existing backend to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../backend'))
-
-# Import your existing functions (NO CHANGES to your code)
-from app_2 import register_user, realtime_attendance, view_attendance_summary
-
-app = Flask(__name__)
-
-@app.route('/api/register', methods=['POST'])
-def api_register_user():
-    # Wrapper around your register_user function
-    pass
-
-@app.route('/api/attendance/start', methods=['POST'])
-def api_start_attendance():
-    # Wrapper around your realtime_attendance function
-    pass
+```
+Realtime-Attendance-IITD/
+├── backend/
+│   ├── detection/
+│   ├── embedding/
+│   ├── supabase_utils/
+│   ├── test_images/
+│   ├── utils/
+│   ├── app.py
+│   ├── api_server.py
+│   ├── config.py
+│   ├── .env
+│   └── requirements.txt
+├── frontend/
+│   ├── app/            # All screens (admin, clock, face-verification, profile, etc.)
+│   ├── services/       # API, Auth, Storage, Supabase logic
+│   ├── assets/
+│   ├── components/
+│   ├── constants/
+│   ├── hooks/
+│   ├── scripts/
+│   ├── node_modules/
+│   ├── app.json
+│   ├── package.json
+│   ├── .env
+│   └── .gitignore
 ```
 
-### Step 2: Frontend Dashboard
-```javascript
-// webapp/frontend/src/Dashboard.js
-import React, { useState, useEffect } from 'react';
+---
 
-function Dashboard() {
-    const [attendanceData, setAttendanceData] = useState([]);
-    const [registeredFaces, setRegisteredFaces] = useState([]);
-    
-    // Fetch data from your API wrapper
-    useEffect(() => {
-        fetchAttendanceData();
-        fetchRegisteredFaces();
-    }, []);
-    
-    return (
-        <div className="dashboard">
-            <h1>Face Recognition Attendance System</h1>
-            {/* Dashboard components */}
-        </div>
-    );
-}
-```
+## 🛠️ Full Workflow
 
-### Step 3: Camera Integration
-```javascript
-// webapp/frontend/src/CameraFeed.js
-import React, { useRef, useEffect } from 'react';
+### 1. User Registration
 
-function CameraFeed() {
-    const videoRef = useRef(null);
-    
-    useEffect(() => {
-        // Start camera feed
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then(stream => {
-                videoRef.current.srcObject = stream;
-            });
-    }, []);
-    
-    return (
-        <div className="camera-container">
-            <video ref={videoRef} autoPlay />
-            {/* Overlay for face detection boxes */}
-        </div>
-    );
-}
-```
+- **Frontend:**  
+  - User opens the app and navigates to "profile" or "face-verification" screen.
+  - Takes/upload photo (uses `expo-camera`, `expo-image-picker`).
+  - Photo + metadata sent to backend via API (`services/apiService.js`).
+- **Backend:**  
+  - Receives image, detects face, extracts embedding.
+  - Stores user profile, embedding, and image path in Supabase.
 
-## 🎯 Key Web App Features
+### 2. Attendance Marking
 
-### Dashboard Features
-- ✅ Live attendance count
-- ✅ Today's attendance list
-- ✅ Registered faces overview
-- ✅ System status indicators
+- **Frontend:**  
+  - Admin or user starts attendance scan.
+  - Live camera feed processed (web/mobile) via appropriate screen.
+- **Backend:**  
+  - Receives frames, processes faces.
+  - Matches embedding with stored users using cosine similarity.
+  - Attendance marked (timestamp, user id/name) and logged in DB.
 
-### Registration Features
-- ✅ Upload photo form
-- ✅ Take photo with webcam
-- ✅ Face detection preview
-- ✅ Name input and validation
+### 3. Reporting & Dashboard
 
-### Attendance Features
-- ✅ Live camera feed
-- ✅ Real-time face recognition
-- ✅ Attendance marking notifications
-- ✅ Historical attendance reports
+- **Frontend:**  
+  - Admin dashboard lists present/absent users, stats, and recent logs.
+  - Export attendance (CSV/PDF) from dashboard UI.
+- **Backend:**  
+  - Provides endpoints for attendance reports, user lists, and analytics.
 
-### Reports & Analytics
-- ✅ Daily/Weekly/Monthly reports
-- ✅ Export to CSV/PDF
-- ✅ Attendance statistics
-- ✅ Face recognition accuracy metrics
+---
 
-## 🔄 Integration Strategy
+## 🖥️ Frontend Tech Highlights
 
-### Your Existing Code → Web API
-```python
-# No changes to your existing functions!
-# Just wrap them in API endpoints
+- **Expo/React Native**: Cross-platform (web, Android, iOS).
+- **Routing**: `expo-router`
+- **UI**: `react-native-paper`, `@expo/vector-icons`
+- **Camera/Image**: `expo-camera`, `expo-image-picker`
+- **Auth/Storage**: Supabase (`@supabase/supabase-js`)
+- **TypeScript/JS**: All logic and hooks
+- **Main scripts** (from `package.json`):
 
-def api_wrapper_register_user(name, image_data):
-    """API wrapper for your register_user function"""
-    # Save uploaded image to temp file
-    # Call your existing register_user function
-    # Return JSON response
-    
-def api_wrapper_start_attendance():
-    """API wrapper for your realtime_attendance function"""
-    # Stream camera feed to web
-    # Use your existing face recognition logic
-    # Send results via WebSocket
-```
+  | Command           | Description                        |
+  |-------------------|------------------------------------|
+  | `npx expo start`  | Start dev server                   |
+  | `npm run android` | Run on Android device/emulator     |
+  | `npm run ios`     | Run on iOS device/emulator         |
+  | `npm run web`     | Run in browser                     |
+  | `npm run lint`    | Lint codebase                      |
+  | `npm run reset-project` | Clean Expo state              |
 
-### Database → Web Interface
-- Your Supabase integration stays exactly the same
-- Web interface calls your existing functions
-- Real-time updates via WebSocket
+---
 
-## 📊 Web Interface Mockups
+## 🧑‍💻 Backend Tech Highlights
 
-### Main Dashboard
-```
-┌─────────────────────────────────────────────┐
-│ Face Recognition Attendance System          │
-├─────────────────┬───────────────────────────┤
-│ Live Feed       │ Today's Stats             │
-│ [Camera View]   │ Total Present: 15         │
-│                 │ Last Marked: John (2:30)  │
-├─────────────────┼───────────────────────────┤
-│ Quick Actions   │ Recent Attendance         │
-│ [Register Face] │ • Alice - 09:15          │
-│ [Start Scanner] │ • Bob - 09:20            │
-│ [View Reports]  │ • Charlie - 09:25        │
-└─────────────────┴───────────────────────────┘
-```
+- **Python**: Core logic, face analysis, API
+- **OpenCV/MTCNN/ArcFace**: Face detection & embedding
+- **Supabase**: Cloud database, image storage
+- **REST API**: Flask/FastAPI endpoints
+- **.env**: All secrets and config keys
 
-### Registration Page
-```
-┌─────────────────────────────────────────────┐
-│ Register New Face                           │
-├─────────────────────────────────────────────┤
-│ Name: [________________]                    │
-│                                             │
-│ Photo Upload:                               │
-│ ┌─────────────┐  OR  ┌─────────────┐      │
-│ │ Upload File │      │ Take Photo  │      │
-│ └─────────────┘      └─────────────┘      │
-│                                             │
-│ Face Preview:                               │
-│ ┌─────────────────────────────────────────┐ │
-│ │ [Detected face with bounding box]      │ │
-│ └─────────────────────────────────────────┘ │
-│                                             │
-│           [Register] [Cancel]               │
-└─────────────────────────────────────────────┘
-```
+  **Main backend files:**
+  - `app.py` or `api_server.py`: Main entry point
+  - `detection/`, `embedding/`: ML modules
+  - `supabase_utils/`: DB/image uploads
+  - `utils/`: Drawing, similarity
+  - `config.py`: Configuration
 
-## ⚡ Quick Start Options
+---
 
-### Option 1: Flask + HTML (Fastest)
-- Simple HTML templates
-- Minimal JavaScript
-- Quick to implement
-- Good for MVP
+## 🗃️ Database Model
 
-### Option 2: FastAPI + React (Recommended)
-- Modern architecture
-- Better performance
-- Scalable solution
-- Professional look
+- **users**: id, name, embedding, image_path
+- **attendance**: id, user_id, timestamp, camera_id
 
-### Option 3: Streamlit (Rapid Prototype)
-- Python-only solution
-- Very quick to build
-- Good for internal tools
-- Less customization
+---
 
-## 🎯 Next Steps
+## 🔄 End-to-End Flow
 
-1. **Choose your tech stack** (I recommend FastAPI + React)
-2. **Set up project structure** (I'll help you)
-3. **Create API wrapper** (Phase 1)
-4. **Build basic frontend** (Phase 2)
-5. **Add camera integration** (Phase 3)
-6. **Polish and deploy** (Phase 4)
+1. **User opens app (Expo/React Native)**
+2. **Registers face (photo/upload)**
+3. **Face sent to backend, embedding generated & stored**
+4. **Attendance scan initiated, live camera feed processed**
+5. **Backend matches faces, logs attendance**
+6. **Admin reviews/export attendance on dashboard**
 
-## 🚀 Ready to Start?
+---
 
-Which approach would you like to take?
-- **A) FastAPI + React** (Modern, scalable)
-- **B) Flask + HTML** (Simple, quick)
-- **C) Streamlit** (Python-only, rapid)
+## 📝 Contribution & License
 
-I'll provide step-by-step code for whichever option you choose!
+MIT License – see [LICENSE](LICENSE)  
+Open to issues & PRs!
+
+---
+
+## 💬 Support
+
+- Issues: [GitHub Issues](https://github.com/VedantSinngh/Realtime-Attendance-IITD/issues)
+- Contact: [Vedant Singh](https://www.linkedin.com/in/vedant-singh-iitd/)
+
+---
+
+## 🌟 Next Features
+
+- Multi-camera support
+- Liveness detection
+- Push notifications
+- Advanced analytics
+- Mobile app publishing
