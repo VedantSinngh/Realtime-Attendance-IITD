@@ -32,13 +32,15 @@ interface LeaveRequest {
     created_at: string;
 }
 
-interface AttendanceRecord {
+interface ClockingRecord {
     id: string;
+    user_id: string;
     clock_in: string;
     clock_out: string | null;
+    total_seconds: number;
     date: string;
-    total_hours: number | null;
-    status: 'working' | 'completed' | 'break';
+    created_at: string;
+    updated_at: string;
 }
 
 interface DashboardStats {
@@ -117,8 +119,9 @@ export default function Home() {
         rejectedLeaves: 0,
     });
     const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
-    const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null);
+    const [todayClocking, setTodayClocking] = useState<ClockingRecord | null>(null);
     const [loading, setLoading] = useState(true);
+    const [currentSessionSeconds, setCurrentSessionSeconds] = useState(0);
 
     // Time update effect
     useEffect(() => {
@@ -129,14 +132,35 @@ export default function Home() {
         return () => clearInterval(timer);
     }, []);
 
-    // Fetch today's attendance record
-    const fetchTodayAttendance = useCallback(async () => {
+    // Timer effect for active session
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+        
+        if (todayClocking && !todayClocking.clock_out) {
+            // Calculate elapsed seconds for current session
+            const clockInTime = new Date(todayClocking.clock_in).getTime();
+            interval = setInterval(() => {
+                const now = new Date().getTime();
+                const elapsedSeconds = Math.floor((now - clockInTime) / 1000);
+                setCurrentSessionSeconds(elapsedSeconds);
+            }, 1000);
+        } else {
+            setCurrentSessionSeconds(0);
+        }
+
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [todayClocking]);
+
+    // Fetch today's clocking record
+    const fetchTodayClocking = useCallback(async () => {
         if (!user) return;
 
         try {
             const today = new Date().toISOString().split('T')[0];
             const { data, error } = await supabase
-                .from('attendance')
+                .from('clocking_time')
                 .select('*')
                 .eq('user_id', user.id)
                 .eq('date', today)
@@ -145,23 +169,161 @@ export default function Home() {
                 .single();
 
             if (error && error.code !== 'PGRST116') {
-                console.error('Error fetching attendance:', error);
+                console.error('Error fetching clocking record:', error);
                 return;
             }
 
             if (data) {
-                setTodayAttendance(data);
-                setAttendanceStatus(data.status || 'not_started');
-                setIsClockIn(!data.clock_in || !!data.clock_out);
+                setTodayClocking(data);
+                setIsClockIn(!!data.clock_out);
+                setAttendanceStatus(data.clock_out ? 'completed' : 'working');
+                
+                // Calculate current session seconds if clocked in
+                if (!data.clock_out) {
+                    const clockInTime = new Date(data.clock_in).getTime();
+                    const now = new Date().getTime();
+                    const elapsedSeconds = Math.floor((now - clockInTime) / 1000);
+                    setCurrentSessionSeconds(elapsedSeconds);
+                }
             } else {
-                setTodayAttendance(null);
-                setAttendanceStatus('not_started');
+                setTodayClocking(null);
                 setIsClockIn(true);
+                setAttendanceStatus('not_started');
+                setCurrentSessionSeconds(0);
             }
         } catch (error) {
-            console.error('Error fetching today attendance:', error);
+            console.error('Error fetching today clocking:', error);
         }
     }, [user]);
+
+    // Clock In function
+    const handleClockIn = async () => {
+        if (!user) return;
+
+        try {
+            const now = new Date();
+            const today = now.toISOString().split('T')[0];
+            
+            // Check if there's an existing record for today
+            const { data: existingRecord } = await supabase
+                .from('clocking_time')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('date', today)
+                .single();
+
+            if (existingRecord && !existingRecord.clock_out) {
+                Alert.alert("Already Clocked In", "You are already clocked in for today.");
+                return;
+            }
+
+            // Create new clock in record
+            const { data, error } = await supabase
+                .from('clocking_time')
+                .insert([
+                    {
+                        user_id: user.id,
+                        clock_in: now.toISOString(),
+                        clock_out: null,
+                        total_seconds: 0,
+                        date: today,
+                    }
+                ])
+                .select()
+                .single();
+
+            if (error) {
+                console.error('Error clocking in:', error);
+                Alert.alert("Error", "Failed to clock in. Please try again.");
+                return;
+            }
+
+            setTodayClocking(data);
+            setIsClockIn(false);
+            setAttendanceStatus('working');
+            
+            // Start timer
+            setCurrentSessionSeconds(0);
+            
+            Alert.alert("Success", "Clocked in successfully!");
+            
+        } catch (error) {
+            console.error('Error clocking in:', error);
+            Alert.alert("Error", "Failed to clock in. Please try again.");
+        }
+    };
+
+    // Clock Out function
+    const handleClockOut = async () => {
+        if (!user || !todayClocking) return;
+
+        try {
+            const now = new Date();
+            const clockInTime = new Date(todayClocking.clock_in).getTime();
+            const clockOutTime = now.getTime();
+            
+            // Calculate total seconds for this session
+            const sessionSeconds = Math.floor((clockOutTime - clockInTime) / 1000);
+            
+            // Calculate total seconds including any previous sessions
+            const totalSeconds = todayClocking.total_seconds + sessionSeconds;
+
+            // Update the record with clock out time and total seconds
+            const { error } = await supabase
+                .from('clocking_time')
+                .update({
+                    clock_out: now.toISOString(),
+                    total_seconds: totalSeconds,
+                    updated_at: now.toISOString()
+                })
+                .eq('id', todayClocking.id);
+
+            if (error) {
+                console.error('Error clocking out:', error);
+                Alert.alert("Error", "Failed to clock out. Please try again.");
+                return;
+            }
+
+            // Update local state
+            const updatedRecord = {
+                ...todayClocking,
+                clock_out: now.toISOString(),
+                total_seconds: totalSeconds
+            };
+            
+            setTodayClocking(updatedRecord);
+            setIsClockIn(true);
+            setAttendanceStatus('completed');
+            setCurrentSessionSeconds(0);
+
+            Alert.alert("Success", `Clocked out successfully! Total time: ${formatSecondsToTime(totalSeconds)}`);
+            
+        } catch (error) {
+            console.error('Error clocking out:', error);
+            Alert.alert("Error", "Failed to clock out. Please try again.");
+        }
+    };
+
+    // Format seconds to readable time
+    const formatSecondsToTime = (seconds: number): string => {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        return `${hours}h ${minutes}m`;
+    };
+
+    // Get current working hours for display
+    const getCurrentWorkingHours = (): string => {
+        if (!todayClocking) return "0h 0m";
+        
+        let totalSeconds = todayClocking.total_seconds || 0;
+        
+        // Add current session seconds if still clocked in
+        if (!todayClocking.clock_out) {
+            totalSeconds += currentSessionSeconds;
+        }
+        
+        return formatSecondsToTime(totalSeconds);
+    };
 
     // Fetch leave requests
     const fetchLeaveRequests = useCallback(async () => {
@@ -195,16 +357,16 @@ export default function Home() {
             const startOfMonthStr = startOfMonth.toISOString().split('T')[0];
             const todayStr = today.toISOString().split('T')[0];
 
-            // Fetch monthly attendance records
+            // Fetch monthly clocking records
             const { data: monthlyData, error: monthlyError } = await supabase
-                .from('attendance')
+                .from('clocking_time')
                 .select('*')
                 .eq('user_id', user.id)
                 .gte('date', startOfMonthStr)
                 .lte('date', todayStr);
 
             if (monthlyError) {
-                console.error('Error fetching monthly attendance:', monthlyError);
+                console.error('Error fetching monthly clocking:', monthlyError);
                 return;
             }
 
@@ -213,9 +375,9 @@ export default function Home() {
             const workingDays = Math.ceil((today.getTime() - startOfMonth.getTime()) / (1000 * 60 * 60 * 24));
             const attendancePercentage = workingDays > 0 ? Math.round((monthlyAttendance / workingDays) * 100) : 0;
 
-            // Calculate today's hours
+            // Calculate today's hours from total_seconds
             const todayRecord = monthlyData?.find(record => record.date === todayStr);
-            const todayHours = todayRecord?.total_hours || 0;
+            const todayHours = todayRecord ? (todayRecord.total_seconds || 0) / 3600 : 0;
 
             setDashboardStats(prev => ({
                 ...prev,
@@ -234,7 +396,7 @@ export default function Home() {
             const fetchData = async () => {
                 setLoading(true);
                 await Promise.all([
-                    fetchTodayAttendance(),
+                    fetchTodayClocking(),
                     fetchLeaveRequests(),
                     fetchAttendanceStats(),
                 ]);
@@ -243,25 +405,25 @@ export default function Home() {
 
             fetchData();
         }
-    }, [user, fetchTodayAttendance, fetchLeaveRequests, fetchAttendanceStats]);
+    }, [user, fetchTodayClocking, fetchLeaveRequests, fetchAttendanceStats]);
 
     // Set up real-time subscriptions
     useEffect(() => {
         if (!user) return;
 
-        const attendanceSubscription = supabase
-            .channel('attendance_changes')
+        const clockingSubscription = supabase
+            .channel('clocking_changes')
             .on(
                 'postgres_changes',
                 {
                     event: '*',
                     schema: 'public',
-                    table: 'attendance',
+                    table: 'clocking_time',
                     filter: `user_id=eq.${user.id}`,
                 },
                 (payload) => {
-                    console.log('Attendance change:', payload);
-                    fetchTodayAttendance();
+                    console.log('Clocking change:', payload);
+                    fetchTodayClocking();
                     fetchAttendanceStats();
                 }
             )
@@ -285,26 +447,26 @@ export default function Home() {
             .subscribe();
 
         return () => {
-            supabase.removeChannel(attendanceSubscription);
+            supabase.removeChannel(clockingSubscription);
             supabase.removeChannel(leaveSubscription);
         };
-    }, [user, fetchTodayAttendance, fetchLeaveRequests]);
+    }, [user, fetchTodayClocking, fetchLeaveRequests, fetchAttendanceStats]);
 
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
         await Promise.all([
-            fetchTodayAttendance(),
+            fetchTodayClocking(),
             fetchLeaveRequests(),
             fetchAttendanceStats(),
         ]);
         setRefreshing(false);
-    }, [fetchTodayAttendance, fetchLeaveRequests, fetchAttendanceStats]);
+    }, [fetchTodayClocking, fetchLeaveRequests, fetchAttendanceStats]);
 
     const handleClockAction = () => {
         if (isClockIn) {
-            router.push("/clock/clock-in");
+            handleClockIn();
         } else {
-            router.push("/clock/clock-out");
+            handleClockOut();
         }
     };
 
@@ -369,19 +531,6 @@ export default function Home() {
         if (hour < 12) return "Good Morning";
         if (hour < 17) return "Good Afternoon";
         return "Good Evening";
-    };
-
-    const getWorkingHours = () => {
-        if (!todayAttendance?.clock_in) return "0h 0m";
-        
-        const clockIn = new Date(todayAttendance.clock_in);
-        const clockOut = todayAttendance.clock_out ? new Date(todayAttendance.clock_out) : new Date();
-        const diff = clockOut.getTime() - clockIn.getTime();
-        
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        
-        return `${hours}h ${minutes}m`;
     };
 
     if (loading) {
@@ -456,7 +605,12 @@ export default function Home() {
                                     </Text>
                                     {attendanceStatus === "working" && (
                                         <Text style={styles.workingHours}>
-                                            {getWorkingHours()} elapsed
+                                            {getCurrentWorkingHours()} elapsed
+                                        </Text>
+                                    )}
+                                    {attendanceStatus === "completed" && todayClocking && (
+                                        <Text style={styles.workingHours}>
+                                            Total: {formatSecondsToTime(todayClocking.total_seconds)}
                                         </Text>
                                     )}
                                 </View>
@@ -466,12 +620,12 @@ export default function Home() {
                 </View>
 
                 {/* Quick Stats - Real-time Data */}
-                {/* <View style={styles.quickStatsContainer}>
+                <View style={styles.quickStatsContainer}>
                     <View style={styles.quickStatCard}>
                         <View style={styles.quickStatIcon}>
                             <Ionicons name="time" size={20} color={Colors.light.primary || "#007bff"} />
                         </View>
-                        <Text style={styles.quickStatValue}>{dashboardStats.todayHours}h</Text>
+                        <Text style={styles.quickStatValue}>{getCurrentWorkingHours()}</Text>
                         <Text style={styles.quickStatLabel}>Today</Text>
                     </View>
                     
@@ -490,7 +644,7 @@ export default function Home() {
                         <Text style={styles.quickStatValue}>{dashboardStats.attendancePercentage}%</Text>
                         <Text style={styles.quickStatLabel}>Attendance</Text>
                     </View>
-                </View> */}
+                </View>
 
                 {/* Leave Status Cards */}
                 {(dashboardStats.pendingLeaves > 0 || dashboardStats.rejectedLeaves > 0) && (
@@ -547,7 +701,11 @@ export default function Home() {
                             <Ionicons name="refresh" size={18} color={Colors.light.gray400 || "#6c757d"} />
                         </TouchableOpacity>
                     </View>
-                    <TimerWidget />
+                    <TimerWidget 
+                        totalSeconds={todayClocking?.total_seconds || 0}
+                        currentSessionSeconds={currentSessionSeconds}
+                        isActive={attendanceStatus === 'working'}
+                    />
                 </View>
 
                 {/* Attendance Type Switch */}
